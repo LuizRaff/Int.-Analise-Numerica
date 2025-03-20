@@ -29,5 +29,9 @@ double avalia_seno (int n, double x){
         coeficientes[i] = cPossibilidades[i%4];
     }
 
-    return avalia_taylor(n, coeficientes, 0.0, x);
+    double resultado = avalia_taylor(n, coeficientes, 0.0, x);
+
+    free(coeficientes);
+
+    return resultado;
 }
