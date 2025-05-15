@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "derivadaintegral.h": "c"
+        "derivadaintegral.h": "c",
+        "stdio.h": "c",
+        "ode.h": "c"
     }
 }
