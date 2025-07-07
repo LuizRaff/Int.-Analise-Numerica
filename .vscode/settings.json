@@ -2,6 +2,8 @@
     "files.associations": {
         "derivadaintegral.h": "c",
         "stdio.h": "c",
-        "ode.h": "c"
+        "ode.h": "c",
+        "stdlib.h": "c",
+        "math.h": "c"
     }
 }
