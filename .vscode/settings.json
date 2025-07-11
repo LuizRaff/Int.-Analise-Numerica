@@ -4,6 +4,9 @@
         "stdio.h": "c",
         "ode.h": "c",
         "stdlib.h": "c",
-        "math.h": "c"
+        "math.h": "c",
+        "pendulum.h": "c",
+        "rk4.h": "c",
+        "test.h": "c"
     }
 }

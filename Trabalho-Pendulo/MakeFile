@@ -1,11 +1,18 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -std=c99 -O3
+INCLUDE = -Iheader
 SRC     = $(wildcard src/*.c)
 OBJ     = $(SRC:.c=.o)
-INC     = -Iinclude
+
+all: pendulo
 
 pendulo: $(OBJ)
-	$(CC) $(CFLAGS) $^ -lm -o $@
+	$(CC) $(CFLAGS) $(OBJ) -o $@
 
 test: pendulo
-	./tests/run_tests.sh
+	$(CC) tests/test_rk4.c -Iheader -o tests/test_rk4 && tests/test_rk4
+
+clean:
+	rm -f src/*.o pendulo tests/test_rk4 data/*.csv
+
+.PHONY: all test clean

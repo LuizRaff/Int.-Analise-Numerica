@@ -1,7 +1,36 @@
-#ifndef ODE_H
-#define ODE_H
+#ifndef RK4_H
+#define RK4_H
 
-double RungeKutta (double t0, double t1, double h, double y0, double (*f) (double t, double y));
-double RungeKuttaAdapt (double t0, double t1, double y0, double (*f) (double t, double y), double tol);
+#include "pendulum.h"
 
-#endif
+/* Passo único RK4 passo FIXO */
+void rk4_step(double t,
+              const State *y,
+              double h,
+              State *yout,
+              void (*f)(double,const State*,State*,const void*),
+              const void *fparams);
+
+/* Integra até t_end usando passo FIXO, armazenando em series[] */
+size_t rk4_integrate_fixed(State y0,
+                           double t0,
+                           double t_end,
+                           double h,
+                           State *series,
+                           size_t capacity,
+                           void (*f)(double,const State*,State*,const void*),
+                           const void *fparams);
+
+/* Versão ADAPTATIVA (erro local ≤ eps) – step-doubling */
+size_t rk4_integrate_adaptive(State y0,
+                              double t0,
+                              double t_end,
+                              double h_init,
+                              double eps,
+                              State *series,
+                              double *times,
+                              size_t capacity,
+                              void (*f)(double,const State*,State*,const void*),
+                              const void *fparams);
+
+#endif /* RK4_H */
