@@ -1,18 +1,35 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -std=c99 -O3
 INCLUDE = -Iheader
+
+# Source files
 SRC     = $(wildcard src/*.c)
-OBJ     = $(SRC:.c=.o)
+# Corresponding object files in objs/, e.g. src/foo.c → objs/foo.o
+OBJ     = $(patsubst src/%.c,objs/%.o,$(SRC))
 
 all: pendulo
 
+# Link step
 pendulo: $(OBJ)
 	$(CC) $(CFLAGS) $(OBJ) -o $@
 
-test: pendulo
-	$(CC) tests/test_rk4.c -Iheader -o tests/test_rk4 && tests/test_rk4
+# Compile step: any .c in src/ → .o in objs/
+objs/%.o: src/%.c | objs
+	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@
+
+# Ensure objs/ exists
+objs:
+	mkdir -p objs
 
 clean:
-	rm -f src/*.o pendulo tests/test_rk4 data/*.csv
+	rm -rf objs/*.o pendulo data/*.csv
+
+exec:
+	@echo "Running pendulo..."
+	./pendulo
+	@echo "Execution finished. Data files are in data/."
+	@echo "Generating data files..."
+	python analysis/graphic.py
+	@echo "Data files generated at output/."
 
 .PHONY: all test clean

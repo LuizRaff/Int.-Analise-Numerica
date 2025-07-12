@@ -1,104 +1,176 @@
 #include <stdio.h>
-#include "../headers/pendulum.h"
-#include "../headers/rk4.h"
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
+#include <stddef.h>
+#include "../headers/pendulum.h"
+#include "../headers/rk4.h"
 
-int generate_sample_csv(void)
+double detect_period_n(const double *times,
+                       const double *omega,
+                       size_t n,
+                       unsigned inv_count)
 {
-    const Params p = {.g = 9.81, .l = 1.0};
-    State y0 = {.theta = 0.1 /*rad*/, .omega = 0.0};
+    if (!times || !omega || n < 2 || inv_count == 0)
+        return -1.0;
 
-    const size_t CAP = 20000;
-    State *series = malloc(CAP * sizeof(State));
-    double *times = malloc(CAP * sizeof(double));
+    unsigned found = 0;
+    double v_prev = omega[0];
+    // double t_prev = times[0];
+    double t_nth   = 0.0;
 
-    size_t n = rk4_integrate_fixed(y0, 0.0, 10.0, 0.001,
-                                   series, CAP,
-         (void(*)(double,const State*,State*,const void*))pendulum_deriv, &p);
-    pendulum_write_csv("data/θ_vs_t.csv", series, times, n);
+    for (size_t i = 1; i < n; ++i) {
+        double v_cur = omega[i];
+        if (v_prev * v_cur <= 0.0) {
+            // we hit the k-th inversion somewhere between i-1 and i
+            double t1 = times[i-1];
+            double t2 = times[i];
+            double frac = fabs(v_prev) / (fabs(v_prev) + fabs(v_cur));
+            double t_zero = t1 + frac * (t2 - t1);
 
-    free(series); free(times);
-    return 0;
+            found++;
+            if (found == inv_count) {
+                t_nth = t_zero;
+                break;
+            }
+        }
+        v_prev = v_cur;
+    }
+    if (found < inv_count) return -1.0;
+
+    // inv_count inversions = inv_count × (½ period)  ⇒  period = (2 * t_nth) / inv_count
+    return (2.0 * t_nth) / (double)inv_count;
 }
 
-int pendulum_write_csv_xy(const char *path,
-                          const State *series,
-                          const double *times,
-                          size_t n,
-                          const Params *p)
-{
-    FILE *fp = fopen(path,"w");
-    if (!fp) return -1;
-    fprintf(fp,"t,theta,omega,x,y\n");
-    for (size_t i = 0; i < n; i++) {
-        double th = series[i].theta;
-        double x  = p->l * sin(th);
-        double y  = -p->l * cos(th);
-        fprintf(fp,"%.10f,%.10f,%.10f,%.10f,%.10f\n",
-                times[i], th, series[i].omega, x, y);
-    }
-    fclose(fp);
-    return 0;
+// Analytic small-angle solver and period
+static double analytic_theta(double theta0, double t, const Params *p) {
+    return theta0 * cos(sqrt(p->g / p->l) * t);
+}
+static double analytic_period(const Params *p) {
+    return 2.0 * M_PI * sqrt(p->l / p->g);
 }
 
+// High-resolution timer (seconds)
+static double now_sec(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 
-int main(void)
-{
-    const Params p = {.g = 9.81, .l = 1.0};
-    State y0 = {.theta = 0.2, .omega = 0.0};
+int main(void) {
+    const Params p = { .g = 9.81, .l = 1.0 };
 
-    // Pre-allocate buffers
-    size_t   cap    = 100000;    // adjust as needed
-    State   *series = malloc(cap * sizeof(State));
-    double  *times  = malloc(cap * sizeof(double));
+    FILE *f = fopen("data/metrics.csv", "w");
+    if (!f) { perror("fopen"); return 1; }
+    fprintf(f, "mode,theta0,period,steps,cpu_time,avg_dt,max_error,real_time\n");
 
-    // Run adaptive RK4: eps = 1e-5, initial h = 1e-3
-    size_t n = rk4_integrate_adaptive(
-        y0,            // initial state
-        0.0,           // t0
-        10.0,          // t_end (e.g. 10 s)
-        1e-3,          // h_init
-        1e-5,          // eps (local error tol)
-        series,        // output states
-        times,         // output times
-        cap,           // capacity
-        (void(*)(double,const State*,State*,const void*))pendulum_deriv,
-        &p
-    );
+    for (size_t i = 1; i < 9000; ++i) {
+        double th0_deg = (double) i / 100;
+        double th0 = th0_deg * M_PI / 180.0;
+        double T_lin = analytic_period(&p);
 
-    if (n == 0) {
-        fprintf(stderr, "Adaptive integrator failed or capacity too small\n");
-        return 1;
+        // Analytic baseline
+        fprintf(f, "analytic,%.2f,%.8f,0,0,0.0,0.0,yes\n", th0_deg, T_lin);
+
+        // Fixed-step RK4
+        double hs[] = {1e-2, 1e-3, 1e-4};
+        for (int j = 0; j < 3; ++j) {
+            double h = hs[j];
+            size_t cap = 200000;
+            State *series = malloc(cap * sizeof(State));
+            double *times = malloc(cap * sizeof(double));
+            double *omegas = malloc(cap * sizeof(double));
+
+            double t_start = now_sec();
+            size_t n = rk4_integrate_fixed(
+                (State){ .theta = th0, .omega = 0.0 },
+                0.0,
+                10.0 * T_lin,
+                h,
+                series,
+                cap,
+                (void(*)(double,const State*,State*,const void*))pendulum_deriv,
+                &p
+            );
+            double t_stop = now_sec();
+
+            // Compute times, omegas, max error
+            double max_err = 0.0;
+            for (size_t k = 0; k < n; ++k) {
+                times[k] = k * h;
+                omegas[k] = series[k].omega;
+                double err = fabs(series[k].theta - analytic_theta(th0, times[k], &p));
+                if (err > max_err) max_err = err;
+            }
+            double avg_dt = h;  // fixed step
+
+            // Period detection using 10th inversion
+            double T_num = detect_period_n(times, omegas, n, 10);
+            double cpu = t_stop - t_start;
+            double avg_step = cpu / (double)n;
+            const char *rt = (avg_step < avg_dt) ? "yes" : "no";
+
+            fprintf(f,
+                "fixed_%.0e,%.2f,%.8f,%zu,%.6f,%.6f,%.6f,%s\n",
+                h, th0_deg, T_num, n, cpu, avg_dt, max_err, rt
+            );
+
+            free(series);
+            free(times);
+            free(omegas);
+        }
+
+        // Adaptive RK4
+        {
+            double h0 = 1e-3, eps = 1e-5;
+            size_t cap = 200000;
+            State *series = malloc(cap * sizeof(State));
+            double *times = malloc(cap * sizeof(double));
+            double *omegas = malloc(cap * sizeof(double));
+
+            double t_start = now_sec();
+            size_t n = rk4_integrate_adaptive(
+                (State){ .theta = th0, .omega = 0.0 },
+                0.0,
+                10.0 * T_lin,
+                h0,
+                eps,
+                series,
+                times,
+                cap,
+                (void(*)(double,const State*,State*,const void*))pendulum_deriv,
+                &p
+            );
+            double t_stop = now_sec();
+
+            // Compute omegas, max error and avg_dt from actual time steps
+            double max_err = 0.0;
+            double sum_dt = 0.0;
+            for (size_t k = 0; k < n; ++k) {
+                omegas[k] = series[k].omega;
+                double err = fabs(series[k].theta - analytic_theta(th0, times[k], &p));
+                if (err > max_err) max_err = err;
+                if (k > 0) sum_dt += (times[k] - times[k-1]);
+            }
+            double avg_dt = sum_dt / (double)(n - 1);
+
+            double T_num = detect_period_n(times, omegas, n, 10);
+            double cpu = t_stop - t_start;
+            double avg_step = cpu / (double)n;
+            const char *rt = (avg_step < avg_dt) ? "yes" : "no";
+
+            fprintf(f,
+                "adaptive,%.2f,%.8f,%zu,%.6f,%.6f,%.6f,%s\n",
+                th0_deg, T_num, n, cpu, avg_dt, max_err, rt
+            );
+
+            free(series);
+            free(times);
+            free(omegas);
+        }
     }
 
-    // Write CSV with (t,θ,ω,x,y)
-    if (pendulum_write_csv_xy("data/θωxy_adaptive.csv",
-                                       series, times, n, &p) != 0) {
-        fprintf(stderr, "Failed to write CSV\n");
-        return 1;
-    }
-
-    printf("Adaptive run complete: %zu samples → data/θωxy_adaptive.csv\n", n);
-
-    free(series);
-    free(times);
-
-    size_t N = 10000;
-    series = malloc(N * sizeof(State));
-    times  = malloc(N * sizeof(double));
-
-    n = rk4_integrate_fixed(
-        y0, 0.0, 10.0, 0.001,
-        series, N,
-        (void(*)(double,const State*,State*,const void*))pendulum_deriv,
-        &p
-    );
-
-    if(pendulum_write_csv_xy("data/θωxy_fixed.csv", series, times, n, &p) != 0){
-        fprintf(stderr, "Failed to write fixed CSV\n");
-        return 1;
-    }
-    free(series); free(times);
+    fclose(f);
+    printf("Metrics collection complete: data/metrics.csv generated.\n");
     return 0;
 }
