@@ -62,7 +62,7 @@ int main(void) {
 
     FILE *f = fopen("data/metrics.csv", "w");
     if (!f) { perror("fopen"); return 1; }
-    fprintf(f, "mode,theta0,period,steps,cpu_time,avg_dt,max_error,real_time\n");
+    fprintf(f, "mode,theta0,period,steps,cpu_time,avg_dt,max_error,period_error,real_time\n");
 
     for (size_t i = 1; i < 9000; ++i) {
         double th0_deg = (double) i / 100;
@@ -70,7 +70,7 @@ int main(void) {
         double T_lin = analytic_period(&p);
 
         // Analytic baseline
-        fprintf(f, "analytic,%.2f,%.8f,0,0,0.0,0.0,yes\n", th0_deg, T_lin);
+        fprintf(f, "analytic,%.2f,%.8f,0,0,0.0,0.0,0.0,yes\n", th0_deg, T_lin);
 
         // Fixed-step RK4
         double hs[] = {1e-2, 1e-3, 1e-4};
@@ -109,10 +109,11 @@ int main(void) {
             double cpu = t_stop - t_start;
             double avg_step = cpu / (double)n;
             const char *rt = (avg_step < avg_dt) ? "yes" : "no";
+            double period_error = fabs(T_num - T_lin);
 
             fprintf(f,
-                "fixed_%.0e,%.2f,%.8f,%zu,%.6f,%.6f,%.6f,%s\n",
-                h, th0_deg, T_num, n, cpu, avg_dt, max_err, rt
+                "fixed_%.0e,%.2f,%.8f,%zu,%.6f,%.6f,%.6f,%.6f,%s\n",
+                h, th0_deg, T_num, n, cpu, avg_dt, max_err, period_error, rt
             );
 
             free(series);
@@ -158,10 +159,11 @@ int main(void) {
             double cpu = t_stop - t_start;
             double avg_step = cpu / (double)n;
             const char *rt = (avg_step < avg_dt) ? "yes" : "no";
+            double period_error = fabs(T_num - T_lin);
 
             fprintf(f,
-                "adaptive,%.2f,%.8f,%zu,%.6f,%.6f,%.6f,%s\n",
-                th0_deg, T_num, n, cpu, avg_dt, max_err, rt
+                "adaptive,%.2f,%.8f,%zu,%.6f,%.6f,%.6f,%.6f,%s\n",
+                th0_deg, T_num, n, cpu, avg_dt, max_err, period_error, rt
             );
 
             free(series);

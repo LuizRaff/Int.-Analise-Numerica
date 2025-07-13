@@ -86,11 +86,23 @@ for idx, row in metrics.iterrows():
     
     coisa_theta = row['theta0']
     coisa_error = row['max_error']
+    
+coisa_theta_p = 0
+coisa_error_p = 0
+for idx, row in metrics.iterrows():
+    if row['period_error'] > 0.001:
+        break
+    
+    coisa_theta_p = row['theta0']
+    coisa_error_p = row['max_error']
 
 
 error_threshold = f"Maximum error threshold exceeded at θ₀={coisa_theta}° with error {coisa_error}s"
+error_threshold_p = f"Maximum period error threshold exceeded at θ₀={coisa_theta_p}° with error {coisa_error_p}s"
 with open('output/error_threshold.txt', 'w', encoding='utf-8') as f:
     f.write(error_threshold)
+    f.write('\n')
+    f.write(error_threshold_p)
     
 print("Plots generated in output/ folder:")
 print("- period_vs_theta0.png")
